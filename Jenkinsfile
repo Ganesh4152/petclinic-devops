@@ -3,13 +3,10 @@ pipeline {
     agent any
 
     environment {
-
-        IMAGE_NAME = "Ganesh4152/petclinic-devops"
-
-        TAG = "${BUILD_NUMBER}"
-
-        CONTAINER = "petclinic"
-
+        IMAGE_NAME = "gani4152/petclinic-devops"
+        IMAGE_TAG = "${BUILD_NUMBER}"
+        CONTAINER_NAME = "petclinic"
+        PROD_SERVER = "13.126.39.120"
     }
 
     stages {
@@ -24,19 +21,16 @@ pipeline {
 
         stage('Build') {
             steps {
-                sh 'mvn clean package -DskipTests'
-            }
-        }
-
-        stage('Test') {
-            steps {
-                sh 'mvn test'
+                sh 'mvn clean package'
             }
         }
 
         stage('Build Docker Image') {
             steps {
-                sh 'docker build -t $IMAGE_NAME:$TAG .'
+                sh '''
+                docker build -t $IMAGE_NAME:$IMAGE_TAG .
+                docker tag $IMAGE_NAME:$IMAGE_TAG $IMAGE_NAME:latest
+                '''
             }
         }
 
@@ -49,49 +43,67 @@ pipeline {
                         passwordVariable: 'DOCKER_PASS'
                     )
                 ]) {
-
                     sh '''
-                    echo "$DOCKER_PASS" | docker login \
-                    -u "$DOCKER_USER" \
-                    --password-stdin
+                    echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
 
-                    docker push $IMAGE_NAME:$TAG
-
-                    docker tag $IMAGE_NAME:$TAG $IMAGE_NAME:latest
-
+                    docker push $IMAGE_NAME:$IMAGE_TAG
                     docker push $IMAGE_NAME:latest
+
+                    docker logout
                     '''
                 }
             }
         }
 
-        stage('Deploy') {
+        stage('Deploy to Production') {
             steps {
-
                 sshagent(['ec2-ssh-key']) {
 
                     sh '''
-                    ssh -o StrictHostKeyChecking=no ec2-user@13.126.39.120 << EOF
+                    ssh -o StrictHostKeyChecking=no ec2-user@$PROD_SERVER << EOF
+
+                    sudo systemctl start docker
 
                     docker pull $IMAGE_NAME:latest
 
-                    docker stop $CONTAINER || true
+                    docker stop $CONTAINER_NAME || true
 
-                    docker rm $CONTAINER || true
+                    docker rm $CONTAINER_NAME || true
 
                     docker run -d \
-                    --name $CONTAINER \
-                    -p 8080:8080 \
-                    $IMAGE_NAME:latest
+                      --name $CONTAINER_NAME \
+                      -p 8080:8080 \
+                      --restart unless-stopped \
+                      $IMAGE_NAME:latest
+
+                    docker ps
 
                     exit
 EOF
                     '''
                 }
-
             }
         }
-
     }
 
+    post {
+
+        success {
+            echo "========================================"
+            echo "CI/CD Pipeline Completed Successfully"
+            echo "Application Deployed Successfully"
+            echo "========================================"
+        }
+
+        failure {
+            echo "========================================"
+            echo "CI/CD Pipeline Failed"
+            echo "Check Console Output"
+            echo "========================================"
+        }
+
+        always {
+            cleanWs()
+        }
+    }
 }
