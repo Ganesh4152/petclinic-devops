@@ -6,7 +6,7 @@ pipeline {
         IMAGE_NAME = "gani4152/petclinic-devops"
         IMAGE_TAG = "${BUILD_NUMBER}"
         CONTAINER_NAME = "petclinic"
-        PROD_SERVER = "13.126.39.120"
+        PROD_SERVER = "52.66.57.217"
     }
 
     stages {
